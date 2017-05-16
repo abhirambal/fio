@@ -1689,7 +1689,7 @@ static void __io_u_log_error(struct thread_data *td, struct io_u *io_u)
 
 	if (td_non_fatal_error(td, eb, io_u->error) && !td->o.error_dump)
 		return;
-
+	printf("xfer_buf: %p: \n", io_u->xfer_buf);
 	log_err("fio: io_u error%s%s: %s: %s offset=%llu, buflen=%lu\n",
 		io_u->file ? " on file " : "",
 		io_u->file ? io_u->file->file_name : "",
@@ -1873,6 +1873,11 @@ static void io_completed(struct thread_data *td, struct io_u **io_u_ptr,
 				icd->error = ret;
 		}
 	} else if (io_u->error) {
+		//int i = 0;
+		printf("xfer_buf: %p: xfer_buf_len: %d \n", io_u->xfer_buf, io_u->xfer_buflen);
+		//for(i=0; i<io_u->xfer_buflen; i++) {
+		//	printf("%x ",*((unsigned char *)(io_u->xfer_buf+i)));
+		//}
 		icd->error = io_u->error;
 		io_u_log_error(td, io_u);
 	}
@@ -1918,7 +1923,9 @@ static void ios_completed(struct thread_data *td,
 	for (i = 0; i < icd->nr; i++) {
 		io_u = td->io_ops->event(td, i);
 
+		//printf("io completed \n");
 		io_completed(td, &io_u, icd);
+		//printf("ios completed done \n");
 
 		if (io_u)
 			put_io_u(td, io_u);
@@ -1977,7 +1984,9 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 		return ret;
 
 	init_icd(td, &icd, ret);
+	//printf("ios completed \n");
 	ios_completed(td, &icd);
+	//printf("ios completed done\n");
 	if (icd.error) {
 		td_verror(td, icd.error, "io_u_queued_complete");
 		return -1;

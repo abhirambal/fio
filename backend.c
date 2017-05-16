@@ -850,6 +850,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 	lat_target_init(td);
 
 	total_bytes = td->o.size;
+	printf("total_bytes: %d \n", total_bytes);
 	/*
 	* Allow random overwrite workloads to write up to io_size
 	* before starting verification phase as 'size' doesn't apply.
@@ -870,6 +871,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 	if (td_trimwrite(td))
 		total_bytes += td->total_io_size;
 
+	printf("total_bytes @ while: %d \n", total_bytes);
 	while ((td->o.read_iolog_file && !flist_empty(&td->io_log_list)) ||
 		(!flist_empty(&td->trim_list)) || !io_issue_bytes_exceeded(td) ||
 		td->o.time_based) {
@@ -983,7 +985,6 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 
 		} else {
 			ret = td_io_queue(td, io_u);
-
 			if (should_check_rate(td))
 				td->rate_next_io_time[ddir] = usec_for_io(td, ddir);
 
@@ -998,8 +999,10 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 reap:
 			full = queue_full(td) ||
 				(ret == FIO_Q_BUSY && td->cur_depth);
-			if (full || io_in_polling(td))
+			if (full || io_in_polling(td)) {
 				ret = wait_for_completions(td, &comp_time);
+			}
+
 		}
 		if (ret < 0)
 			break;
@@ -1048,7 +1051,7 @@ reap:
 	}
 	if (!td->error) {
 		struct fio_file *f;
-
+			
 		if (td->o.io_submit_mode == IO_MODE_OFFLOAD) {
 			workqueue_flush(&td->io_wq);
 			i = 0;
@@ -1072,8 +1075,10 @@ reap:
 								f->file_name);
 			}
 		}
-	} else
+	} else {
+
 		cleanup_pending_aio(td);
+	}
 
 	/*
 	 * stop job if we failed doing any IO
@@ -1154,6 +1159,7 @@ static int init_io_u(struct thread_data *td)
 	min_write = td->o.min_bs[DDIR_WRITE];
 	td->orig_buffer_size = (unsigned long long) max_bs
 					* (unsigned long long) max_units;
+	printf("bs*max_depth: %d \n", td->orig_buffer_size);
 
 	if (td_ioengine_flagged(td, FIO_NOIO) || !(td_read(td) || td_write(td)))
 		data_xfer = 0;
@@ -1175,12 +1181,14 @@ static int init_io_u(struct thread_data *td)
 	 * lucky and the allocator gives us an aligned address.
 	 */
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
-	    td_ioengine_flagged(td, FIO_RAWIO))
-		td->orig_buffer_size += page_mask + td->o.mem_align;
+	    td_ioengine_flagged(td, FIO_RAWIO)) {
+		//td->orig_buffer_size += page_mask + td->o.mem_align;
+		printf("**WARNING -commented** direct-io alignment: page_mask: %x td->o.mem_align: %x \n", page_mask, td->o.mem_align);
+	}
 
 	if (td->o.mem_type == MEM_SHMHUGE || td->o.mem_type == MEM_MMAPHUGE) {
 		unsigned long bs;
-
+		printf("hitting huge page alignment? \n");
 		bs = td->orig_buffer_size + td->o.hugepage_size - 1;
 		td->orig_buffer_size = bs & ~(td->o.hugepage_size - 1);
 	}
@@ -1190,8 +1198,11 @@ static int init_io_u(struct thread_data *td)
 		return 1;
 	}
 
-	if (data_xfer && allocate_io_mem(td))
+	printf("allocate_IO_mem \n");
+	if (data_xfer && allocate_io_mem(td)) {
+		printf("allocate_IO_mem failed \n");
 		return 1;
+	}
 
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
 	    td_ioengine_flagged(td, FIO_RAWIO))
@@ -1612,9 +1623,13 @@ static void *thread_main(void *data)
 	if (init_iolog(td))
 		goto err;
 
-	if (init_io_u(td))
+	printf("iou init  \n");
+	if (init_io_u(td)) {
+		printf("iou init failed \n");
 		goto err;
+	}
 
+	printf("iou init ok \n");
 	if (o->verify_async && verify_async_init(td))
 		goto err;
 
@@ -1693,8 +1708,9 @@ static void *thread_main(void *data)
 
 		prune_io_piece_log(td);
 
-		if (td->o.verify_only && td_write(td))
+		if (td->o.verify_only && td_write(td)) {
 			verify_bytes = do_dry_run(td);
+		}
 		else {
 			uint64_t bytes_done[DDIR_RWDIR_CNT];
 

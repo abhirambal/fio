@@ -391,7 +391,7 @@ static int str_mem_cb(void *data, const char *mem)
 	struct thread_data *td = cb_data_to_td(data);
 
 	if (td->o.mem_type == MEM_MMAPHUGE || td->o.mem_type == MEM_MMAP ||
-	    td->o.mem_type == MEM_MMAPSHARED)
+	    td->o.mem_type == MEM_MMAPSHARED || td->o.mem_type == MEM_MMAPDEVMEM)
 		td->o.mmapfile = get_opt_postfix(mem);
 
 	return 0;
@@ -2597,6 +2597,10 @@ struct fio_option fio_options[FIO_MAX_OPTS] = {
 			  { .ival = "mmapshared",
 			    .oval = MEM_MMAPSHARED,
 			    .help = "Like mmap, but use the shared flag",
+			  },
+			  { .ival = "mmapdevmem",
+			    .oval = MEM_MMAPDEVMEM,
+			    .help = "Like mmap, but use the device memory",
 			  },
 #ifdef FIO_HAVE_HUGETLB
 			  { .ival = "mmaphuge",

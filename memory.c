@@ -125,9 +125,12 @@ static void free_mem_shm(struct thread_data *td)
 static int alloc_mem_mmap(struct thread_data *td, size_t total_mem)
 {
 	int flags = 0;
+	int o_flags = 0;
+//	int i = 0;
 
 	td->mmapfd = -1;
 
+	printf("memsize %d \n", total_mem);
 	if (td->o.mem_type == MEM_MMAPHUGE) {
 		unsigned long mask = td->o.hugepage_size - 1;
 
@@ -138,7 +141,16 @@ static int alloc_mem_mmap(struct thread_data *td, size_t total_mem)
 	}
 
 	if (td->o.mmapfile) {
-		td->mmapfd = open(td->o.mmapfile, O_RDWR|O_CREAT, 0644);
+
+		if (td->o.mem_type == MEM_MMAPDEVMEM) {
+			printf("mmap dev mem: mmapfile will be /dev/<dev_file> \n");
+			o_flags = O_RDWR;
+		}
+		else { 
+			o_flags = O_RDWR | O_CREAT;
+		}
+
+		td->mmapfd = open(td->o.mmapfile, o_flags, 0644);
 
 		if (td->mmapfd < 0) {
 			td_verror(td, errno, "open mmap file");
@@ -147,35 +159,47 @@ static int alloc_mem_mmap(struct thread_data *td, size_t total_mem)
 		}
 		if (td->o.mem_type != MEM_MMAPHUGE &&
 		    td->o.mem_type != MEM_MMAPSHARED &&
+		    td->o.mem_type != MEM_MMAPDEVMEM &&
 		    ftruncate(td->mmapfd, total_mem) < 0) {
 			td_verror(td, errno, "truncate mmap file");
 			td->orig_buffer = NULL;
 			return 1;
 		}
 		if (td->o.mem_type == MEM_MMAPHUGE ||
-		    td->o.mem_type == MEM_MMAPSHARED)
+		    td->o.mem_type == MEM_MMAPSHARED ||
+		     td->o.mem_type == MEM_MMAPDEVMEM) {
+			printf("shared mapping \n");
 			flags |= MAP_SHARED;
-		else
+		}
+		else {
 			flags |= MAP_PRIVATE;
+		}
 	} else
 		flags |= OS_MAP_ANON | MAP_PRIVATE;
 
 	td->orig_buffer = mmap(NULL, total_mem, PROT_READ | PROT_WRITE, flags,
 				td->mmapfd, 0);
+//	for (i = 0; i < td->orig_buffer_size; i++) {
+//		printf("%x ",*((unsigned char*)(td->orig_buffer+i)));
+//	}
+	
+	printf("mmap done:  td->orig_buffer: %lx td->orig_buffer_size: %ld \n", td->orig_buffer, td->orig_buffer_size);
 	dprint(FD_MEM, "mmap %llu/%d %p\n", (unsigned long long) total_mem,
 						td->mmapfd, td->orig_buffer);
 	if (td->orig_buffer == MAP_FAILED) {
+		printf("mmap failed \n");
 		td_verror(td, errno, "mmap");
 		td->orig_buffer = NULL;
 		if (td->mmapfd != 1 && td->mmapfd != -1) {
 			close(td->mmapfd);
-			if (td->o.mmapfile)
+			if (td->o.mmapfile && td->o.mem_type != MEM_MMAPDEVMEM)
 				unlink(td->o.mmapfile);
 		}
 
 		return 1;
 	}
-
+	
+	printf("mmap returns \n");
 	return 0;
 }
 
@@ -219,12 +243,17 @@ int allocate_io_mem(struct thread_data *td)
 		return 0;
 
 	total_mem = td->orig_buffer_size;
+	printf("total mem: %d \n", total_mem);
 
 	if (td->o.odirect || td->o.mem_align || td->o.oatomic ||
 	    td_ioengine_flagged(td, FIO_MEMALIGN)) {
-		total_mem += page_mask;
-		if (td->o.mem_align && td->o.mem_align > page_size)
+
+		//total_mem += page_mask;
+		printf("***WARNING--commented out!! **** total mem, adding page_mask: %d \n", total_mem);
+		if (td->o.mem_align && td->o.mem_align > page_size) {
 			total_mem += td->o.mem_align - page_size;
+			printf("total mem, some align: %d \n", total_mem);
+		}
 	}
 
 	dprint(FD_MEM, "Alloc %llu for buffers\n", (unsigned long long) total_mem);
@@ -244,7 +273,7 @@ int allocate_io_mem(struct thread_data *td)
 	else if (td->o.mem_type == MEM_SHM || td->o.mem_type == MEM_SHMHUGE)
 		ret = alloc_mem_shm(td, total_mem);
 	else if (td->o.mem_type == MEM_MMAP || td->o.mem_type == MEM_MMAPHUGE ||
-		 td->o.mem_type == MEM_MMAPSHARED)
+		 td->o.mem_type == MEM_MMAPSHARED || td->o.mem_type == MEM_MMAPDEVMEM)
 		ret = alloc_mem_mmap(td, total_mem);
 	else {
 		log_err("fio: bad mem type: %d\n", td->o.mem_type);
@@ -273,7 +302,7 @@ void free_io_mem(struct thread_data *td)
 	else if (td->o.mem_type == MEM_SHM || td->o.mem_type == MEM_SHMHUGE)
 		free_mem_shm(td);
 	else if (td->o.mem_type == MEM_MMAP || td->o.mem_type == MEM_MMAPHUGE ||
-		 td->o.mem_type == MEM_MMAPSHARED)
+		 td->o.mem_type == MEM_MMAPSHARED || td->o.mem_type == MEM_MMAPDEVMEM)
 		free_mem_mmap(td, total_mem);
 	else
 		log_err("Bad memory type %u\n", td->o.mem_type);

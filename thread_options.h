@@ -20,6 +20,7 @@ enum fio_memtype {
 	MEM_MMAP,	/* use anonynomous mmap */
 	MEM_MMAPHUGE,	/* memory mapped huge file */
 	MEM_MMAPSHARED, /* use mmap with shared flag */
+	MEM_MMAPDEVMEM,	/* use mmap of a particular char device */
 };
 
 #define ERROR_STR_MAX	128

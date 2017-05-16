@@ -89,12 +89,18 @@ static struct io_u *fio_libaio_event(struct thread_data *td, int event)
 
 	ev = ld->aio_events + event;
 	io_u = container_of(ev->obj, struct io_u, iocb);
-
+	ev->res = io_u->xfer_buflen;
+	
+	//printf("ev->res %d io_u->xfer_buflen %d \n",ev->res, io_u->xfer_buflen);
 	if (ev->res != io_u->xfer_buflen) {
-		if (ev->res > io_u->xfer_buflen)
+		if (ev->res > io_u->xfer_buflen) {
+			printf("hitting error here %d \n",-ev->res);
 			io_u->error = -ev->res;
-		else
+		}
+		else {
+			printf("setting io_u resid-ev->res %d io_u->xfer_buflen %d \n",ev->res, io_u->xfer_buflen);
 			io_u->resid = io_u->xfer_buflen - ev->res;
+		}
 	} else
 		io_u->error = 0;
 
@@ -362,7 +368,6 @@ static int fio_libaio_init(struct thread_data *td)
 	ld->aio_events = calloc(ld->entries, sizeof(struct io_event));
 	ld->iocbs = calloc(ld->entries, sizeof(struct iocb *));
 	ld->io_us = calloc(ld->entries, sizeof(struct io_u *));
-
 	td->io_ops_data = ld;
 	return 0;
 }
