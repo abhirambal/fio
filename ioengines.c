@@ -211,7 +211,7 @@ int td_io_getevents(struct thread_data *td, unsigned int min, unsigned int max,
 		    const struct timespec *t)
 {
 	int r = 0;
-
+	//printf("entering td_io_getev \n");
 	/*
 	 * For ioengine=rdma one side operation RDMA_WRITE or RDMA_READ,
 	 * server side gets a message from the client
@@ -223,6 +223,7 @@ int td_io_getevents(struct thread_data *td, unsigned int min, unsigned int max,
 		return 0;
 
 	if (min > 0 && td->io_ops->commit) {
+		//printf("calling commit here \n");
 		r = td->io_ops->commit(td);
 		if (r < 0)
 			goto out;
@@ -256,6 +257,7 @@ int td_io_queue(struct thread_data *td, struct io_u *io_u)
 	unsigned long buflen = io_u->xfer_buflen;
 	int ret;
 
+	//printf("td_io_queue -> \n");
 	dprint_io_u(io_u, "queue");
 	fio_ro_check(td, io_u);
 
@@ -273,15 +275,18 @@ int td_io_queue(struct thread_data *td, struct io_u *io_u)
 	io_u->resid = 0;
 
 	if (td_ioengine_flagged(td, FIO_SYNCIO)) {
+		//printf("SYNCIO flagged \n");
 		if (fio_fill_issue_time(td))
 			fio_gettime(&io_u->issue_time, NULL);
 
 		/*
 		 * only used for iolog
 		 */
-		if (td->o.read_iolog_file)
+		if (td->o.read_iolog_file) {
+			//printf("memcpy\n");
 			memcpy(&td->last_issue, &io_u->issue_time,
 					sizeof(struct timeval));
+		}
 	}
 
 	if (ddir_rw(ddir)) {
@@ -290,7 +295,9 @@ int td_io_queue(struct thread_data *td, struct io_u *io_u)
 		td->rate_io_issue_bytes[ddir] += buflen;
 	}
 
+	//printf("calling engines queue \n");
 	ret = td->io_ops->queue(td, io_u);
+	//printf("done \n");
 
 	unlock_file(td, io_u->file);
 
@@ -341,6 +348,7 @@ int td_io_queue(struct thread_data *td, struct io_u *io_u)
 			td->ts.total_io_u[io_u->ddir]++;
 
 		if (td->io_u_queued >= td->o.iodepth_batch) {
+			//printf("Commiting --------> queued: %d depth_batch: %d \n",td->io_u_queued, td->o.iodepth_batch);
 			r = td_io_commit(td);
 			if (r < 0)
 				return r;
@@ -387,13 +395,17 @@ int td_io_commit(struct thread_data *td)
 	int ret;
 
 	dprint(FD_IO, "calling ->commit(), depth %d\n", td->cur_depth);
+	//printf("calling ->commit(), cur_depth %d queued: %d \n", td->cur_depth, td->io_u_queued);
 
-	if (!td->cur_depth || !td->io_u_queued)
+	if (!td->cur_depth || !td->io_u_queued) {
+		//printf("return back now \n");
 		return 0;
+	}
 
 	io_u_mark_depth(td, td->io_u_queued);
 
 	if (td->io_ops->commit) {
+		//printf("calling commit handler here \n");
 		ret = td->io_ops->commit(td);
 		if (ret)
 			td_verror(td, -ret, "io commit");

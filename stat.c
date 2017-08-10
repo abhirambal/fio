@@ -22,6 +22,8 @@
 
 struct fio_mutex *stat_mutex;
 
+long relinquish = 0;
+
 void clear_rusage_stat(struct thread_data *td)
 {
 	struct thread_stat *ts = &td->ts;
@@ -35,7 +37,10 @@ void clear_rusage_stat(struct thread_data *td)
 void update_rusage_stat(struct thread_data *td)
 {
 	struct thread_stat *ts = &td->ts;
+	struct rusage usage;
 
+	fio_getrusage(&usage);
+	printf("vol: %ld non_voln: %ld relinquished: %d \n", usage.ru_nvcsw, usage.ru_nivcsw, relinquish);
 	fio_getrusage(&td->ru_end);
 	ts->usr_time += mtime_since(&td->ru_start.ru_utime,
 					&td->ru_end.ru_utime);

@@ -435,7 +435,7 @@ static int wait_for_completions(struct thread_data *td, struct timeval *time)
 	const int full = queue_full(td);
 	int min_evts = 0;
 	int ret;
-
+	//printf("****-> wait for comp \n");
 	if (td->flags & TD_F_REGROW_LOGS)
 		return io_u_quiesce(td);
 
@@ -443,8 +443,10 @@ static int wait_for_completions(struct thread_data *td, struct timeval *time)
 	 * if the queue is full, we MUST reap at least 1 event
 	 */
 	min_evts = min(td->o.iodepth_batch_complete_min, td->cur_depth);
-	if ((full && !min_evts) || !td->o.iodepth_batch_complete_min)
+	if ((full && !min_evts) || !td->o.iodepth_batch_complete_min) {
+		//printf("queue is full, we must reap alteast 1 \n");	
 		min_evts = 1;
+	}
 
 	if (time && (__should_check_rate(td, DDIR_READ) ||
 	    __should_check_rate(td, DDIR_WRITE) ||
@@ -452,11 +454,15 @@ static int wait_for_completions(struct thread_data *td, struct timeval *time)
 		fio_gettime(time, NULL);
 
 	do {
+		//printf("queued_complete min_evts: %d \n",min_evts,td->cur_depth,td->o.iodepth_low);
 		ret = io_u_queued_complete(td, min_evts);
-		if (ret < 0)
+		if (ret < 0) {
+			//printf("breaking..\n");
 			break;
+		}
 	} while (full && (td->cur_depth > td->o.iodepth_low));
 
+	//printf("<-**** wait for comp \n");
 	return ret;
 }
 
@@ -475,6 +481,7 @@ int io_queue_event(struct thread_data *td, struct io_u *io_u, int *ret,
 			int bytes = io_u->xfer_buflen - io_u->resid;
 			struct fio_file *f = io_u->file;
 
+			//printf("FIO_Q_COMPLETED:resid \n");
 			if (bytes_issued)
 				*bytes_issued += bytes;
 
@@ -503,9 +510,11 @@ int io_queue_event(struct thread_data *td, struct io_u *io_u, int *ret,
 			if (io_u->offset == f->real_file_size)
 				goto sync_done;
 
+			//printf("FIO_Q_COMPLETED:requeue_io \n");
 			requeue_io_u(td, &io_u);
 		} else {
 sync_done:
+			//printf("FIO_Q_COMPLETED: syncIO \n");
 			if (comp_time && (__should_check_rate(td, DDIR_READ) ||
 			    __should_check_rate(td, DDIR_WRITE) ||
 			    __should_check_rate(td, DDIR_TRIM)))
@@ -533,15 +542,19 @@ sync_done:
 		 * the io_u is really queued. if it does have such
 		 * a hook, it has to call io_u_queued() itself.
 		 */
+		//printf("FIO_Q_QUEUED:\n");
 		if (td->io_ops->commit == NULL)
 			io_u_queued(td, io_u);
 		if (bytes_issued)
 			*bytes_issued += io_u->xfer_buflen;
 		break;
 	case FIO_Q_BUSY:
+		//printf("FIO_Q_BUSY:\n");
 		if (!from_verify)
 			unlog_io_piece(td, io_u);
+		//printf("requeue_io \n");
 		requeue_io_u(td, &io_u);
+		//printf("commit");
 		ret2 = td_io_commit(td);
 		if (ret2 < 0)
 			*ret = ret2;
@@ -839,6 +852,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 	int ret = 0;
 	uint64_t total_bytes, bytes_issued = 0;
 
+	printf("--> ********************************************* main do_io loop ********************************** \n");	
 	for (i = 0; i < DDIR_RWDIR_CNT; i++)
 		bytes_done[i] = td->bytes_done[i];
 
@@ -875,6 +889,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 	while ((td->o.read_iolog_file && !flist_empty(&td->io_log_list)) ||
 		(!flist_empty(&td->trim_list)) || !io_issue_bytes_exceeded(td) ||
 		td->o.time_based) {
+		//printf("processing while--> \n");
 		struct timeval comp_time;
 		struct io_u *io_u;
 		int full;
@@ -908,6 +923,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 		     (td->o.time_based && td->o.verify != VERIFY_NONE)))
 			break;
 
+		//printf("get io_u \n");
 		io_u = get_io_u(td);
 		if (IS_ERR_OR_NULL(io_u)) {
 			int err = PTR_ERR(io_u);
@@ -932,6 +948,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 		if (td->o.verify != VERIFY_NONE && io_u->ddir == DDIR_READ &&
 		    ((io_u->flags & IO_U_F_VER_LIST) || !td_rw(td))) {
 
+			//printf("add verification handler \n");
 			if (!td->o.verify_pattern_bytes) {
 				io_u->rand_seed = __rand(&td->verify_state);
 				if (sizeof(int) != sizeof(long *))
@@ -984,10 +1001,12 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 				td->rate_next_io_time[ddir] = usec_for_io(td, ddir);
 
 		} else {
+			//printf("io_queue \n");
 			ret = td_io_queue(td, io_u);
 			if (should_check_rate(td))
 				td->rate_next_io_time[ddir] = usec_for_io(td, ddir);
 
+			//printf("io_queue_event \n");
 			if (io_queue_event(td, io_u, &ret, ddir, &bytes_issued, 0, &comp_time))
 				break;
 
@@ -996,11 +1015,13 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 			 * we can get BUSY even without IO queued, if the
 			 * system is resource starved.
 			 */
-reap:
+reap:			//printf("check full: ret: %d busy&cur_dept: %d cur_depth: %d \n",ret, FIO_Q_BUSY && td->cur_depth, td->cur_depth);
 			full = queue_full(td) ||
 				(ret == FIO_Q_BUSY && td->cur_depth);
 			if (full || io_in_polling(td)) {
+				//printf("wait_for_completions: full%d io_in_polling(td):%d\n", full,io_in_polling(td));
 				ret = wait_for_completions(td, &comp_time);
+				//printf("wait for comp done \n");
 			}
 
 		}
@@ -1022,6 +1043,7 @@ reap:
 			lat_target_check(td);
 
 		if (td->o.thinktime) {
+			//printf("think time? \n");
 			unsigned long long b;
 
 			b = ddir_rw_sum(td->io_blocks);
@@ -1059,6 +1081,7 @@ reap:
 			i = td->cur_depth;
 
 		if (i) {
+			//printf("get completions. \n");
 			ret = io_u_queued_complete(td, i);
 			if (td->o.fill_device && td->error == ENOSPC)
 				td->error = 0;
@@ -2419,7 +2442,8 @@ int fio_backend(struct sk_out *sk_out)
 
 	cgroup_list = smalloc(sizeof(*cgroup_list));
 	INIT_FLIST_HEAD(cgroup_list);
-
+	
+	printf("-------------------------------------------------> calling run threads \n");
 	run_threads(sk_out);
 
 	helper_thread_exit();

@@ -1437,11 +1437,16 @@ bool queue_full(const struct thread_data *td)
 {
 	const int qempty = io_u_qempty(&td->io_u_freelist);
 
-	if (qempty)
+	if (qempty) {
+		//printf("[queue_full] qempty: %d \n",qempty);
 		return true;
-	if (!td->o.latency_target)
+	}
+	if (!td->o.latency_target) {
+		//printf("[queue_full] lat_target false \n");
 		return false;
-
+	}
+	
+	//printf("[queue_full] td->cur_depth: %d \n",td->cur_depth);
 	return td->cur_depth >= td->latency_qd;
 }
 
@@ -1921,11 +1926,11 @@ static void ios_completed(struct thread_data *td,
 	int i;
 
 	for (i = 0; i < icd->nr; i++) {
+
+		//printf("call the event handler of the engine \n");
 		io_u = td->io_ops->event(td, i);
 
-		//printf("io completed \n");
 		io_completed(td, &io_u, icd);
-		//printf("ios completed done \n");
 
 		if (io_u)
 			put_io_u(td, io_u);
@@ -1969,8 +1974,11 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 
 	dprint(FD_IO, "io_u_queued_complete: min=%d\n", min_evts);
 
-	if (!min_evts)
+	//printf("--> io_u_queued_complete: min=%d\n", min_evts);
+	if (!min_evts) {
+		printf("setting timestamp \n");
 		tvp = &ts;
+	}
 	else if (min_evts > td->cur_depth)
 		min_evts = td->cur_depth;
 
@@ -1983,10 +1991,11 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 	} else if (!ret)
 		return ret;
 
+	//printf("init_icd \n");
 	init_icd(td, &icd, ret);
 	//printf("ios completed \n");
 	ios_completed(td, &icd);
-	//printf("ios completed done\n");
+	////printf("ios completed done\n");
 	if (icd.error) {
 		td_verror(td, icd.error, "io_u_queued_complete");
 		return -1;
@@ -1995,6 +2004,7 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 	for (ddir = 0; ddir < DDIR_RWDIR_CNT; ddir++)
 		td->bytes_done[ddir] += icd.bytes_done[ddir];
 
+	//printf("<-- io_u_queued_complete done \n");
 	return ret;
 }
 

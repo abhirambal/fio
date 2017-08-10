@@ -126,7 +126,6 @@ static int alloc_mem_mmap(struct thread_data *td, size_t total_mem)
 {
 	int flags = 0;
 	int o_flags = 0;
-//	int i = 0;
 
 	td->mmapfd = -1;
 
@@ -179,10 +178,6 @@ static int alloc_mem_mmap(struct thread_data *td, size_t total_mem)
 
 	td->orig_buffer = mmap(NULL, total_mem, PROT_READ | PROT_WRITE, flags,
 				td->mmapfd, 0);
-//	for (i = 0; i < td->orig_buffer_size; i++) {
-//		printf("%x ",*((unsigned char*)(td->orig_buffer+i)));
-//	}
-	
 	printf("mmap done:  td->orig_buffer: %lx td->orig_buffer_size: %ld \n", td->orig_buffer, td->orig_buffer_size);
 	dprint(FD_MEM, "mmap %llu/%d %p\n", (unsigned long long) total_mem,
 						td->mmapfd, td->orig_buffer);
@@ -211,8 +206,10 @@ static void free_mem_mmap(struct thread_data *td, size_t total_mem)
 	if (td->o.mmapfile) {
 		if (td->mmapfd != -1)
 			close(td->mmapfd);
-		unlink(td->o.mmapfile);
-		free(td->o.mmapfile);
+		if(td->o.mem_type != MEM_MMAPDEVMEM) {
+			unlink(td->o.mmapfile);
+			free(td->o.mmapfile);
+		}
 	}
 }
 
@@ -222,13 +219,16 @@ static int alloc_mem_malloc(struct thread_data *td, size_t total_mem)
 	dprint(FD_MEM, "malloc %llu %p\n", (unsigned long long) total_mem,
 							td->orig_buffer);
 
+	printf("mmaloc  :%p \n",td->orig_buffer);
 	return td->orig_buffer == NULL;
 }
 
 static void free_mem_malloc(struct thread_data *td)
 {
 	dprint(FD_MEM, "free malloc mem %p\n", td->orig_buffer);
+	printf("mmaloc freeing :%p \n",td->orig_buffer);
 	free(td->orig_buffer);
+	printf("mmaloc freeing done \n");
 }
 
 /*
@@ -291,8 +291,10 @@ void free_io_mem(struct thread_data *td)
 	unsigned int total_mem;
 
 	total_mem = td->orig_buffer_size;
-	if (td->o.odirect || td->o.oatomic)
-		total_mem += page_mask;
+	if (td->o.odirect || td->o.oatomic) {
+		printf("COMMENTED free_io mem--> total_mem: %d \n", total_mem);
+		//total_mem += page_mask;
+	}
 
 	if (td->io_ops->iomem_alloc) {
 		if (td->io_ops->iomem_free)

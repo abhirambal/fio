@@ -14,7 +14,11 @@
 #include "../fio.h"
 #include "../lib/pow2.h"
 #include "../optgroup.h"
+#include "benchmark.h"
 
+INIT_BENCHMARK_DATA(submit);
+
+extern long relinquish;
 static int fio_libaio_commit(struct thread_data *td);
 
 struct libaio_data {
@@ -71,10 +75,13 @@ static int fio_libaio_prep(struct thread_data fio_unused *td, struct io_u *io_u)
 {
 	struct fio_file *f = io_u->file;
 
-	if (io_u->ddir == DDIR_READ)
+	if (io_u->ddir == DDIR_READ) {
+		//printf("[aio_read] buf:%p buf_len:%d \n",io_u->xfer_buf, io_u->xfer_buflen);
 		io_prep_pread(&io_u->iocb, f->fd, io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
-	else if (io_u->ddir == DDIR_WRITE)
+	}
+	else if (io_u->ddir == DDIR_WRITE) {
 		io_prep_pwrite(&io_u->iocb, f->fd, io_u->xfer_buf, io_u->xfer_buflen, io_u->offset);
+	}
 	else if (ddir_sync(io_u->ddir))
 		io_prep_fsync(&io_u->iocb, f->fd);
 
@@ -87,11 +94,10 @@ static struct io_u *fio_libaio_event(struct thread_data *td, int event)
 	struct io_event *ev;
 	struct io_u *io_u;
 
+	//printf("```->fio_libaio_event \n");
 	ev = ld->aio_events + event;
 	io_u = container_of(ev->obj, struct io_u, iocb);
-	ev->res = io_u->xfer_buflen;
 	
-	//printf("ev->res %d io_u->xfer_buflen %d \n",ev->res, io_u->xfer_buflen);
 	if (ev->res != io_u->xfer_buflen) {
 		if (ev->res > io_u->xfer_buflen) {
 			printf("hitting error here %d \n",-ev->res);
@@ -104,6 +110,7 @@ static struct io_u *fio_libaio_event(struct thread_data *td, int event)
 	} else
 		io_u->error = 0;
 
+	//printf("<-```fio_libaio_event \n");
 	return io_u;
 }
 
@@ -156,8 +163,10 @@ static int fio_libaio_getevents(struct thread_data *td, unsigned int min,
 	unsigned actual_min = td->o.iodepth_batch_complete_min == 0 ? 0 : min;
 	struct timespec __lt, *lt = NULL;
 	int r, events = 0;
-
+	
+	//printf("----> libaio_getev\n");
 	if (t) {
+		printf("timestamp true \n");
 		__lt = *t;
 		lt = &__lt;
 	}
@@ -169,19 +178,37 @@ static int fio_libaio_getevents(struct thread_data *td, unsigned int min,
 				== AIO_RING_MAGIC) {
 			r = user_io_getevents(ld->aio_ctx, max,
 				ld->aio_events + events);
-		} else {
+		} else 
+		{
+			//printf("getev-> min: %d max: %d events %d \n", actual_min, max,events);
+			
+			//__lt.tv_sec = 0;
+			//__lt.tv_nsec = 350;
+			//lt = &__lt;
+
+			//BENCH_BEGIN(submit);
 			r = io_getevents(ld->aio_ctx, actual_min,
 				max, ld->aio_events + events, lt);
+			//BENCH_END(submit);
+			//if(r != 1) {printf("r: %d \n",r);}
+			//printf("r: %d \n",r);
 		}
-		if (r > 0)
+		if (r > 0) {
+			//printf("got event %d \n",r);
 			events += r;
+		}
 		else if ((min && r == 0) || r == -EAGAIN) {
+			//printf("relinquishing %d \n",r);
 			fio_libaio_commit(td);
+			relinquish++;
 			usleep(100);
-		} else if (r != -EINTR)
+		} else if (r != -EINTR) {
+			//printf("out of while %d \n",r);
 			break;
+		}
 	} while (events < min);
 
+	//printf("<----- libaio_getev\n");
 	return r < 0 ? r : events;
 }
 
@@ -189,10 +216,13 @@ static int fio_libaio_queue(struct thread_data *td, struct io_u *io_u)
 {
 	struct libaio_data *ld = td->io_ops_data;
 
+	//printf("+++-> fio_libaio_queue \n");
 	fio_ro_check(td, io_u);
 
-	if (ld->queued == td->o.iodepth)
+	if (ld->queued == td->o.iodepth) {
+		//printf("queue busy or full \n");
 		return FIO_Q_BUSY;
+	}
 
 	/*
 	 * fsync is tricky, since it can fail and we need to do it
@@ -201,6 +231,7 @@ static int fio_libaio_queue(struct thread_data *td, struct io_u *io_u)
 	 * have pending io, to let fio complete those first.
 	 */
 	if (ddir_sync(io_u->ddir)) {
+		//printf("sync? \n");
 		if (ld->queued)
 			return FIO_Q_BUSY;
 
@@ -209,6 +240,7 @@ static int fio_libaio_queue(struct thread_data *td, struct io_u *io_u)
 	}
 
 	if (io_u->ddir == DDIR_TRIM) {
+		//printf("trim? \n");
 		if (ld->queued)
 			return FIO_Q_BUSY;
 
@@ -220,6 +252,7 @@ static int fio_libaio_queue(struct thread_data *td, struct io_u *io_u)
 	ld->io_us[ld->head] = io_u;
 	ring_inc(ld, &ld->head, 1);
 	ld->queued++;
+	//printf("<-+++ fio_libaio_queue, queued: %d\n",ld->queued);
 	return FIO_Q_QUEUED;
 }
 
@@ -229,17 +262,23 @@ static void fio_libaio_queued(struct thread_data *td, struct io_u **io_us,
 	struct timeval now;
 	unsigned int i;
 
-	if (!fio_fill_issue_time(td))
+	//printf(">>> fio_libaio_queued \n");
+	if (!fio_fill_issue_time(td)) {
+		
+		//printf(">>> return back \n");
 		return;
+	}
 
 	fio_gettime(&now, NULL);
 
 	for (i = 0; i < nr; i++) {
 		struct io_u *io_u = io_us[i];
 
+		//printf("memcpy \n");
 		memcpy(&io_u->issue_time, &now, sizeof(now));
 		io_u_queued(td, io_u);
 	}
+	//printf("<<< fio_libaio_queued \n");
 }
 
 static int fio_libaio_commit(struct thread_data *td)
@@ -250,17 +289,19 @@ static int fio_libaio_commit(struct thread_data *td)
 	struct timeval tv;
 	int ret, wait_start = 0;
 
+	//printf("--------*******---- inside libaio commit \n");
 	if (!ld->queued)
 		return 0;
 
 	do {
 		long nr = ld->queued;
-
 		nr = min((unsigned int) nr, ld->entries - ld->tail);
 		io_us = ld->io_us + ld->tail;
 		iocbs = ld->iocbs + ld->tail;
 
+		//printf("io submit nr:%d \n",nr);
 		ret = io_submit(ld->aio_ctx, nr, iocbs);
+		//printf("io submit returns:%d \n",ret);
 		if (ret > 0) {
 			fio_libaio_queued(td, io_us, ret);
 			io_u_mark_submit(td, ret);
@@ -283,6 +324,7 @@ static int fio_libaio_commit(struct thread_data *td)
 			 * just error out, something must be buggy in the
 			 * IO path.
 			 */
+			//printf("io submit eagain \n");
 			if (ld->queued) {
 				ret = 0;
 				break;
@@ -302,6 +344,7 @@ static int fio_libaio_commit(struct thread_data *td)
 			 * we cannot, treat it as a fatal event since there's
 			 * nothing we can do about it.
 			 */
+			//printf("io submit enomem \n");
 			if (ld->queued)
 				ret = 0;
 			break;
@@ -309,6 +352,7 @@ static int fio_libaio_commit(struct thread_data *td)
 			break;
 	} while (ld->queued);
 
+	//printf("<------------------------ done libaio commit \n");
 	return ret;
 }
 
@@ -322,7 +366,7 @@ static int fio_libaio_cancel(struct thread_data *td, struct io_u *io_u)
 static void fio_libaio_cleanup(struct thread_data *td)
 {
 	struct libaio_data *ld = td->io_ops_data;
-
+	BENCH_COMPUTE_STAT(submit);
 	if (ld) {
 		/*
 		 * Work-around to avoid huge RCU stalls at exit time. If we
@@ -364,6 +408,7 @@ static int fio_libaio_init(struct thread_data *td)
 	}
 
 	ld->entries = td->o.iodepth;
+	printf("libaio init ---> entries: %d \n",ld->entries);
 	ld->is_pow2 = is_power_of_2(ld->entries);
 	ld->aio_events = calloc(ld->entries, sizeof(struct io_event));
 	ld->iocbs = calloc(ld->entries, sizeof(struct iocb *));
