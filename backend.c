@@ -58,6 +58,7 @@
 #include "lib/mountcheck.h"
 #include "rate-submit.h"
 #include "helper_thread.h"
+#include "benchmark.h"
 
 static struct fio_mutex *startup_mutex;
 static struct flist_head *cgroup_list;
@@ -78,6 +79,7 @@ unsigned long done_secs = 0;
 
 #define JOB_START_TIMEOUT	(5 * 1000)
 
+INIT_BENCHMARK_DATA(wfc);
 static void sig_int(int sig)
 {
 	if (threads) {
@@ -450,8 +452,9 @@ static int wait_for_completions(struct thread_data *td, struct timeval *time)
 
 	if (time && (__should_check_rate(td, DDIR_READ) ||
 	    __should_check_rate(td, DDIR_WRITE) ||
-	    __should_check_rate(td, DDIR_TRIM)))
+	    __should_check_rate(td, DDIR_TRIM))) {
 		fio_gettime(time, NULL);
+	}
 
 	do {
 		//printf("queued_complete min_evts: %d \n",min_evts,td->cur_depth,td->o.iodepth_low);
@@ -889,12 +892,12 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 	while ((td->o.read_iolog_file && !flist_empty(&td->io_log_list)) ||
 		(!flist_empty(&td->trim_list)) || !io_issue_bytes_exceeded(td) ||
 		td->o.time_based) {
-		//printf("processing while--> \n");
 		struct timeval comp_time;
 		struct io_u *io_u;
 		int full;
 		enum fio_ddir ddir;
 
+		//printf("processing while--> \n");
 		check_update_rusage(td);
 
 		if (td->terminate || td->done)
@@ -930,6 +933,7 @@ static void do_io(struct thread_data *td, uint64_t *bytes_done)
 
 			io_u = NULL;
 			if (err == -EBUSY) {
+				//printf(" ---> no free io found, go reap \n");
 				ret = FIO_Q_BUSY;
 				goto reap;
 			}
@@ -1020,7 +1024,9 @@ reap:			//printf("check full: ret: %d busy&cur_dept: %d cur_depth: %d \n",ret, F
 				(ret == FIO_Q_BUSY && td->cur_depth);
 			if (full || io_in_polling(td)) {
 				//printf("wait_for_completions: full%d io_in_polling(td):%d\n", full,io_in_polling(td));
+				//BENCH_BEGIN(wfc);
 				ret = wait_for_completions(td, &comp_time);
+				//BENCH_END(wfc);
 				//printf("wait for comp done \n");
 			}
 
@@ -1102,6 +1108,7 @@ reap:			//printf("check full: ret: %d busy&cur_dept: %d cur_depth: %d \n",ret, F
 
 		cleanup_pending_aio(td);
 	}
+	BENCH_COMPUTE_STAT(wfc);
 
 	/*
 	 * stop job if we failed doing any IO

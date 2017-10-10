@@ -1460,9 +1460,12 @@ struct io_u *__get_io_u(struct thread_data *td)
 	td_io_u_lock(td);
 
 again:
-	if (!io_u_rempty(&td->io_u_requeues))
+	if (!io_u_rempty(&td->io_u_requeues)) {
+		//printf("getio from requeuelist  \n");
 		io_u = io_u_rpop(&td->io_u_requeues);
+	}
 	else if (!queue_full(td)) {
+		//printf("getio from freelist  \n");
 		io_u = io_u_qpop(&td->io_u_freelist);
 
 		io_u->file = NULL;
@@ -1489,6 +1492,7 @@ again:
 		 * return one
 		 */
 		assert(!(td->flags & TD_F_CHILD));
+		//printf("**************PTHREAD_COND?? \n");
 		assert(!pthread_cond_wait(&td->free_cond, &td->io_u_lock));
 		goto again;
 	}
@@ -1676,8 +1680,10 @@ struct io_u *get_io_u(struct thread_data *td)
 out:
 	assert(io_u->file);
 	if (!td_io_prep(td, io_u)) {
-		if (!td->o.disable_lat)
+		if (!td->o.disable_lat) { 
 			fio_gettime(&io_u->start_time, NULL);
+			//printf("io_u: %p, start_sec: %ld, start_usec: %ld\n",io_u, io_u->start_time.tv_sec, io_u->start_time.tv_usec);
+		}
 		if (do_scramble)
 			small_content_scramble(io_u);
 		return io_u;
@@ -1866,12 +1872,15 @@ static void io_completed(struct thread_data *td, struct io_u **io_u_ptr,
 			file_log_write_comp(td, f, io_u->offset, bytes);
 
 		if (ramp_time_over(td) && (td->runstate == TD_RUNNING ||
-					   td->runstate == TD_VERIFYING))
+					   td->runstate == TD_VERIFYING)) {
+			//printf("account_io_completion \n");
 			account_io_completion(td, io_u, icd, ddir, bytes);
+		}
 
 		icd->bytes_done[ddir] += bytes;
 
 		if (io_u->end_io) {
+			//printf("calling end_io ------------> \n");
 			ret = io_u->end_io(td, io_u_ptr);
 			io_u = *io_u_ptr;
 			if (ret && !icd->error)
@@ -1929,6 +1938,7 @@ static void ios_completed(struct thread_data *td,
 
 		//printf("call the event handler of the engine \n");
 		io_u = td->io_ops->event(td, i);
+		//printf("io_u: %p \n", io_u);
 
 		io_completed(td, &io_u, icd);
 
@@ -1976,7 +1986,7 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 
 	//printf("--> io_u_queued_complete: min=%d\n", min_evts);
 	if (!min_evts) {
-		printf("setting timestamp \n");
+		//printf("setting timestamp \n");
 		tvp = &ts;
 	}
 	else if (min_evts > td->cur_depth)
@@ -1995,7 +2005,7 @@ int io_u_queued_complete(struct thread_data *td, int min_evts)
 	init_icd(td, &icd, ret);
 	//printf("ios completed \n");
 	ios_completed(td, &icd);
-	////printf("ios completed done\n");
+	//printf("ios completed done\n");
 	if (icd.error) {
 		td_verror(td, icd.error, "io_u_queued_complete");
 		return -1;

@@ -136,19 +136,23 @@ static int user_io_getevents(io_context_t aio_ctx, unsigned int max,
 	long i = 0;
 	unsigned head;
 	struct aio_ring *ring = (struct aio_ring*) aio_ctx;
-
+	
 	while (i < max) {
 		head = ring->head;
 
 		if (head == ring->tail) {
 			/* There are no more completions */
+			//printf("nothing avail..\n");
 			break;
 		} else {
 			/* There is another completion to reap */
+			//BENCH_BEGIN(submit);
+			//printf("got %d \n",i);
 			events[i] = ring->events[head];
 			read_barrier();
 			ring->head = (head + 1) % ring->nr;
 			i++;
+			//BENCH_END(submit);
 		}
 	}
 
@@ -166,12 +170,13 @@ static int fio_libaio_getevents(struct thread_data *td, unsigned int min,
 	
 	//printf("----> libaio_getev\n");
 	if (t) {
-		printf("timestamp true \n");
+		//printf("timestamp true \n");
 		__lt = *t;
 		lt = &__lt;
 	}
 
 	do {
+		//printf("getev-> min: %d actual_min: %d max: %d events %d \n", min, actual_min, max,events);
 		if (o->userspace_reap == 1
 		    && actual_min == 0
 		    && ((struct aio_ring *)(ld->aio_ctx))->magic
@@ -180,11 +185,10 @@ static int fio_libaio_getevents(struct thread_data *td, unsigned int min,
 				ld->aio_events + events);
 		} else 
 		{
-			//printf("getev-> min: %d max: %d events %d \n", actual_min, max,events);
 			
-			//__lt.tv_sec = 0;
-			//__lt.tv_nsec = 350;
-			//lt = &__lt;
+		//	__lt.tv_sec = 0;
+		//	__lt.tv_nsec = 0;
+		//	lt = &__lt;
 
 			//BENCH_BEGIN(submit);
 			r = io_getevents(ld->aio_ctx, actual_min,
@@ -201,7 +205,7 @@ static int fio_libaio_getevents(struct thread_data *td, unsigned int min,
 			//printf("relinquishing %d \n",r);
 			fio_libaio_commit(td);
 			relinquish++;
-			usleep(100);
+			//usleep(100);
 		} else if (r != -EINTR) {
 			//printf("out of while %d \n",r);
 			break;
@@ -274,7 +278,7 @@ static void fio_libaio_queued(struct thread_data *td, struct io_u **io_us,
 	for (i = 0; i < nr; i++) {
 		struct io_u *io_u = io_us[i];
 
-		//printf("memcpy \n");
+		//printf("io_u: %p issue.sec:%ld issue.usec:%ld\n",io_u, now.tv_sec, now.tv_usec);
 		memcpy(&io_u->issue_time, &now, sizeof(now));
 		io_u_queued(td, io_u);
 	}
